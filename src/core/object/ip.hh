@@ -39,4 +39,7 @@ typedef struct core_object_ip {
 
     const uint8_t* payload;
     size_t         plen;
+
+    const uint8_t* pkt;
+    uint32_t mask;
 } core_object_ip_t;

@@ -29,4 +29,7 @@ typedef struct core_object_icmp {
     uint8_t  type;
     uint8_t  code;
     uint16_t cksum;
+
+    const uint8_t* pkt;
+    uint32_t mask;
 } core_object_icmp_t;

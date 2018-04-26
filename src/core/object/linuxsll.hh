@@ -31,4 +31,7 @@ typedef struct core_object_linuxsll {
     uint16_t link_layer_address_length;
     uint8_t  link_layer_address[8];
     uint16_t ether_type;
+
+    const uint8_t* pkt;
+    uint32_t mask;
 } core_object_linuxsll_t;

@@ -42,4 +42,7 @@ typedef struct core_object_tcp {
 
     const uint8_t* payload;
     size_t         len;
+
+    const uint8_t* pkt;
+    uint32_t mask;
 } core_object_tcp_t;

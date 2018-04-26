@@ -29,4 +29,7 @@ typedef struct core_object_ether {
     uint8_t  dhost[6];
     uint8_t  shost[6];
     uint16_t type;
+
+    const uint8_t* pkt;
+    uint32_t mask;
 } core_object_ether_t;

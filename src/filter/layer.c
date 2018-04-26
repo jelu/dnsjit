@@ -191,9 +191,12 @@ static int _proto(filter_layer_t* self, uint8_t proto, const core_object_t* obj,
         core_object_icmp_t* icmp = &self->icmp;
         icmp->obj_prev           = obj;
 
-        need8(icmp->type, pkt, len);
-        need8(icmp->code, pkt, len);
-        need16(icmp->cksum, pkt, len);
+        icmp->pkt = pkt;
+        icmp->mask = len >> 1;
+        advancexb(4, pkt, len);
+        // need8(icmp->type, pkt, len);
+        // need8(icmp->code, pkt, len);
+        // need16(icmp->cksum, pkt, len);
 
         self->produced = (core_object_t*)icmp;
         break;
@@ -213,10 +216,13 @@ static int _proto(filter_layer_t* self, uint8_t proto, const core_object_t* obj,
         core_object_udp_t* udp = &self->udp;
         udp->obj_prev          = obj;
 
-        need16(udp->sport, pkt, len);
-        need16(udp->dport, pkt, len);
-        need16(udp->ulen, pkt, len);
-        need16(udp->sum, pkt, len);
+        udp->pkt = pkt;
+        udp->mask = len >> 1;
+        advancexb(8, pkt, len);
+        // need16(udp->sport, pkt, len);
+        // need16(udp->dport, pkt, len);
+        // need16(udp->ulen, pkt, len);
+        // need16(udp->sum, pkt, len);
 
         udp->payload = (uint8_t*)pkt;
         udp->len     = len;
@@ -228,15 +234,19 @@ static int _proto(filter_layer_t* self, uint8_t proto, const core_object_t* obj,
         core_object_tcp_t* tcp = &self->tcp;
         tcp->obj_prev          = obj;
 
-        need16(tcp->sport, pkt, len);
-        need16(tcp->dport, pkt, len);
-        need32(tcp->seq, pkt, len);
-        need32(tcp->ack, pkt, len);
+        tcp->pkt = pkt;
+        tcp->mask = len >> 1;
+        advancexb(12, pkt, len);
+        // need16(tcp->sport, pkt, len);
+        // need16(tcp->dport, pkt, len);
+        // need32(tcp->seq, pkt, len);
+        // need32(tcp->ack, pkt, len);
         need4x2(tcp->off, tcp->x2, pkt, len);
-        need8(tcp->flags, pkt, len);
-        need16(tcp->win, pkt, len);
-        need16(tcp->sum, pkt, len);
-        need16(tcp->urp, pkt, len);
+        advancexb(7, pkt, len);
+        // need8(tcp->flags, pkt, len);
+        // need16(tcp->win, pkt, len);
+        // need16(tcp->sum, pkt, len);
+        // need16(tcp->urp, pkt, len);
         if (tcp->off > 5) {
             tcp->opts_len = (tcp->off - 5) * 4;
             needxb(tcp->opts, tcp->opts_len, pkt, len);
@@ -266,16 +276,19 @@ static int _ip(filter_layer_t* self, const core_object_t* obj, const unsigned ch
             core_object_ip_t* ip = &self->ip;
             ip->obj_prev         = obj;
 
+            ip->pkt = pkt;
+            ip->mask = len >> 1;
             need4x2(ip->v, ip->hl, pkt, len);
             need8(ip->tos, pkt, len);
             need16(ip->len, pkt, len);
-            need16(ip->id, pkt, len);
-            need16(ip->off, pkt, len);
-            need8(ip->ttl, pkt, len);
-            need8(ip->p, pkt, len);
-            need16(ip->sum, pkt, len);
-            needxb(&ip->src, 4, pkt, len);
-            needxb(&ip->dst, 4, pkt, len);
+            advancexb(16, pkt, len);
+            // need16(ip->id, pkt, len);
+            // need16(ip->off, pkt, len);
+            // need8(ip->ttl, pkt, len);
+            // need8(ip->p, pkt, len);
+            // need16(ip->sum, pkt, len);
+            // needxb(&ip->src, 4, pkt, len);
+            // needxb(&ip->dst, 4, pkt, len);
 
             /* TODO: IPv4 options */
 
@@ -509,8 +522,11 @@ static int _link(filter_layer_t* self, const core_object_pcap_t* pcap)
         core_object_ether_t* ether = &self->ether;
         ether->obj_prev            = (core_object_t*)pcap;
 
-        needxb(ether->dhost, 6, pkt, len);
-        needxb(ether->shost, 6, pkt, len);
+        ether->pkt = pkt;
+        ether->mask = len >> 1;
+        advancexb(12, pkt, len);
+        // needxb(ether->dhost, 6, pkt, len);
+        // needxb(ether->shost, 6, pkt, len);
         need16(ether->type, pkt, len);
 
         switch (ether->type) {
@@ -558,10 +574,13 @@ static int _link(filter_layer_t* self, const core_object_pcap_t* pcap)
         core_object_linuxsll_t* linuxsll = &self->linuxsll;
         linuxsll->obj_prev               = (core_object_t*)pcap;
 
-        need16(linuxsll->packet_type, pkt, len);
-        need16(linuxsll->arp_hardware, pkt, len);
-        need16(linuxsll->link_layer_address_length, pkt, len);
-        needxb(linuxsll->link_layer_address, 8, pkt, len);
+        linuxsll->pkt = pkt;
+        linuxsll->mask = len >> 1;
+        advancexb(14, pkt, len);
+        // need16(linuxsll->packet_type, pkt, len);
+        // need16(linuxsll->arp_hardware, pkt, len);
+        // need16(linuxsll->link_layer_address_length, pkt, len);
+        // needxb(linuxsll->link_layer_address, 8, pkt, len);
         need16(linuxsll->ether_type, pkt, len);
 
         switch (linuxsll->ether_type) {
