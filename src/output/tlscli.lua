@@ -40,11 +40,19 @@ local output_tlscli_t = ffi.typeof(t_name)
 local Tlscli = {}
 
 -- Create a new Tlscli output.
-function Tlscli.new()
+-- If
+-- .I nonblocking
+-- is true then nonblocking mode will be enabled for the TLS session.
+function Tlscli.new(nonblocking)
+    if nonblocking == true then
+        nonblocking = 1
+    else
+        nonblocking = 0
+    end
     local self = {
         obj = output_tlscli_t(),
     }
-    C.output_tlscli_init(self.obj)
+    C.output_tlscli_init(self.obj, nonblocking)
     ffi.gc(self.obj, C.output_tlscli_destroy)
     return setmetatable(self, { __index = Tlscli })
 end
@@ -62,6 +70,14 @@ end
 -- , perform a TLS handshake and return 0 if successful.
 function Tlscli:connect(host, port)
     return C.output_tlscli_connect(self.obj, host, port)
+end
+
+-- Return if nonblocking mode is on (true) or off (false).
+function Tlscli:nonblocking()
+    if C.output_tlscli_nonblocking(self.obj) == 1 then
+        return true
+    end
+    return false
 end
 
 -- Return the C functions and context for receiving objects, these objects

@@ -25,12 +25,31 @@
 //lua:require("dnsjit.core.object.payload_h")
 //lua:require("dnsjit.core.timespec_h")
 
-typedef struct output_tlscli {
-    core_log_t _log;
-    size_t     pkts, errs;
-    int        fd, tls_ok, nonblocking;
+typedef enum output_dnscli_mode {
+    OUTPUT_DNSCLI_MODE_NONE        = 0,
+    OUTPUT_DNSCLI_MODE_OPTIONS     = 0xf,
+    OUTPUT_DNSCLI_MODE_NONBLOCKING = 0x1,
+    OUTPUT_DNSCLI_MODE_MODES       = 0xf0,
+    OUTPUT_DNSCLI_MODE_UDP         = 0x10,
+    OUTPUT_DNSCLI_MODE_TCP         = 0x20,
+    OUTPUT_DNSCLI_MODE_TLS         = 0x30,
+} output_dnscli_mode_t;
 
-    uint8_t               recvbuf[64 * 1024];
+typedef struct output_dnscli {
+    core_log_t _log;
+
+    output_dnscli_mode_t mode;
+
+    size_t pkts, errs, timeouts;
+    int    fd, nonblocking, conn_ok;
+
+    struct pollfd poll;
+    int           poll_timeout;
+
+    struct sockaddr_storage addr;
+    size_t                  addr_len;
+
+    uint8_t               recvbuf[(64 * 1024) + 2];
     core_object_payload_t pkt;
     uint16_t              dnslen;
     uint8_t               have_dnslen, have_pkt;
@@ -40,14 +59,14 @@ typedef struct output_tlscli {
 
     gnutls_session_t                 session;
     gnutls_certificate_credentials_t cred;
-} output_tlscli_t;
+} output_dnscli_t;
 
-core_log_t* output_tlscli_log();
+core_log_t* output_dnscli_log();
 
-void output_tlscli_init(output_tlscli_t* self, int nonblocking);
-void output_tlscli_destroy(output_tlscli_t* self);
-int output_tlscli_connect(output_tlscli_t* self, const char* host, const char* port);
-int output_tlscli_nonblocking(output_tlscli_t* self);
+void output_dnscli_init(output_dnscli_t* self, output_dnscli_mode_t mode);
+void output_dnscli_destroy(output_dnscli_t* self);
+int output_dnscli_connect(output_dnscli_t* self, const char* host, const char* port);
+ssize_t output_dnscli_send(output_dnscli_t* self, const core_object_t* obj, size_t sent);
 
-core_receiver_t output_tlscli_receiver(output_tlscli_t* self);
-core_producer_t output_tlscli_producer(output_tlscli_t* self);
+core_receiver_t output_dnscli_receiver(output_dnscli_t* self);
+core_producer_t output_dnscli_producer(output_dnscli_t* self);

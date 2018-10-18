@@ -27,8 +27,8 @@
 
 typedef struct output_udpcli {
     core_log_t _log;
-    size_t     pkts, errs;
-    int        fd;
+    size_t     pkts, errs, timeouts;
+    int        fd, nonblocking;
 
     struct sockaddr_storage addr;
     size_t                  addr_len;
@@ -38,7 +38,6 @@ typedef struct output_udpcli {
     size_t                pkts_recv;
 
     core_timespec_t timeout;
-    int8_t          blocking;
 } output_udpcli_t;
 
 core_log_t* output_udpcli_log();
@@ -48,6 +47,7 @@ void output_udpcli_destroy(output_udpcli_t* self);
 int output_udpcli_connect(output_udpcli_t* self, const char* host, const char* port);
 int output_udpcli_nonblocking(output_udpcli_t* self);
 int output_udpcli_set_nonblocking(output_udpcli_t* self, int nonblocking);
+ssize_t output_udpcli_send(output_udpcli_t* self, const core_object_t* obj, size_t sent);
 
 core_receiver_t output_udpcli_receiver(output_udpcli_t* self);
 core_producer_t output_udpcli_producer(output_udpcli_t* self);

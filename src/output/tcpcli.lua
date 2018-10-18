@@ -88,6 +88,25 @@ function Tcpcli:nonblocking(bool)
     end
 end
 
+-- Send a core.object.payload or core.object.dns and optionally continue
+-- sending after
+-- .I sent
+-- bytes.
+-- Unlike the receive interface this function lets you know if the sending was
+-- successful or not which might be needed on nonblocking connections.
+-- Returns -1 on error, 0 if timed out or unable to send due to nonblocking, or
+-- the number of bytes sent.
+-- .B Note
+-- if the object sent is a payload or if it's a DNS without dnslen included in
+-- the payload then the returned number of bytes sent will include the sent
+-- dnslen (payload.len + 2).
+function Tcpcli:send(object, sent)
+    if sent == nil then
+        sent = 0
+    end
+    return C.output_tcpcli_send(self.obj, object)
+end
+
 -- Return the C functions and context for receiving objects, these objects
 -- will be sent.
 function Tcpcli:receive()

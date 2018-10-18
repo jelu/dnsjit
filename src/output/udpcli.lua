@@ -17,17 +17,14 @@
 -- along with dnsjit.  If not, see <http://www.gnu.org/licenses/>.
 
 -- dnsjit.output.udpcli
--- Simple and dumb UDP DNS client
+-- UDP DNS client
 --   local output = require("dnsjit.output.udpcli").new("127.0.0.1", "53")
 --
--- Simple and rather dumb DNS client that takes any payload you give it and
--- sends the full payload over UDP.
--- .SS Attributes
--- .TP
--- timeout
--- A
--- .I core.timespec
--- that is used when producing objects.
+-- DNS client that takes a
+-- .I core.object.dns
+-- or
+-- .I core.object.payload
+-- and sends it over UDP.
 module(...,package.seeall)
 
 require("dnsjit.output.udpcli_h")
@@ -48,8 +45,12 @@ function Udpcli.new()
     return setmetatable(self, { __index = Udpcli })
 end
 
--- Set the timeout when producing objects.
+-- Set or return the timeout used for sending and reciving, see
+-- .IR core.timespec .
 function Udpcli:timeout(seconds, nanoseconds)
+    if seconds == nil or nanoseconds == nil then
+        return self.obj.timeout
+    end
     self.obj.timeout.sec = seconds
     self.obj.timeout.nsec = nanoseconds
 end
@@ -67,6 +68,9 @@ end
 -- return 0 if successful, if
 -- .I bool
 -- is not specified then return if nonblocking mode is on (true) or off (false).
+-- .B Note:
+-- should be used after
+-- .IR connect() .
 function Udpcli:nonblocking(bool)
     if bool == nil then
         if C.output_udpcli_nonblocking(self.obj) == 1 then
@@ -78,6 +82,20 @@ function Udpcli:nonblocking(bool)
     else
         return C.output_udpcli_set_nonblocking(self.obj, 0)
     end
+end
+
+-- Send an object and optionally continue sending after
+-- .I sent
+-- bytes.
+-- Unlike the receive interface this function lets you know if the sending was
+-- successful or not which might be needed on nonblocking connections.
+-- Returns -1 on error, 0 if timed out or unable to send due to nonblocking, or
+-- the number of bytes sent.
+function Udpcli:send(object, sent)
+    if sent == nil then
+        sent = 0
+    end
+    return C.output_udpcli_send(self.obj, object)
 end
 
 -- Return the C functions and context for receiving objects, these objects
@@ -118,4 +136,12 @@ function Udpcli:errors()
     return tonumber(self.obj.errs)
 end
 
+-- Return the number of timeouts when sending or receiving.
+function Udpcli:timeouts()
+    return tonumber(self.obj.timeouts)
+end
+
+-- core.object.dns (3),
+-- core.object.payload (3),
+-- core.timespec (3)
 return Udpcli

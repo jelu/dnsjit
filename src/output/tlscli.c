@@ -37,9 +37,9 @@
 static core_log_t      _log      = LOG_T_INIT("output.tlscli");
 static output_tlscli_t _defaults = {
     LOG_T_INIT_OBJ("output.tlscli"),
-    0, 0, -1, 0,
+    0, 0, -1, 0, 0,
     { 0 }, CORE_OBJECT_PAYLOAD_INIT(0),
-    0, 0, 0, 0,
+    0, 0, 0, 0, 0,
     { 5, 0 },
     0, 0
 };
@@ -49,18 +49,18 @@ core_log_t* output_tlscli_log()
     return &_log;
 }
 
-void output_tlscli_init(output_tlscli_t* self)
+void output_tlscli_init(output_tlscli_t* self, int nonblocking)
 {
     int err;
     mlassert_self();
 
     *self             = _defaults;
-    self->pkt.payload = self->recvbuf;
+    self->pkt.payload = self->recvbuf + sizeof(self->dnslen);
 
     gnutls_global_init();
     if ((err = gnutls_certificate_allocate_credentials(&self->cred)) != GNUTLS_E_SUCCESS) {
         lfatal("gnutls_certificate_allocate_credentials() error: %s", gnutls_strerror(err));
-    } else if ((err = gnutls_init(&self->session, GNUTLS_CLIENT)) != GNUTLS_E_SUCCESS) {
+    } else if ((err = gnutls_init(&self->session, GNUTLS_CLIENT | (nonblocking ? GNUTLS_NONBLOCK : 0))) != GNUTLS_E_SUCCESS) {
         lfatal("gnutls_init() error: %s", gnutls_strerror(err));
     } else if ((err = gnutls_set_default_priority(self->session)) != GNUTLS_E_SUCCESS) {
         lfatal("gnutls_set_default_priority() error: %s", gnutls_strerror(err));
@@ -69,6 +69,7 @@ void output_tlscli_init(output_tlscli_t* self)
     }
 
     gnutls_handshake_set_timeout(self->session, GNUTLS_DEFAULT_HANDSHAKE_TIMEOUT);
+    self->nonblocking = nonblocking ? 1 : 0;
 }
 
 void output_tlscli_destroy(output_tlscli_t* self)
@@ -150,6 +151,13 @@ int output_tlscli_connect(output_tlscli_t* self, const char* host, const char* p
     return 0;
 }
 
+int output_tlscli_nonblocking(output_tlscli_t* self)
+{
+    mlassert_self();
+
+    return self->nonblocking;
+}
+
 static void _receive(output_tlscli_t* self, const core_object_t* obj)
 {
     const uint8_t* payload;
@@ -194,6 +202,11 @@ static void _receive(output_tlscli_t* self, const core_object_t* obj)
                     switch (ret) {
                     case GNUTLS_E_AGAIN:
                     case GNUTLS_E_TIMEDOUT:
+                    case GNUTLS_E_INTERRUPTED:
+                        if (self->nonblocking) {
+                            lwarning("unable to send in nonblocking mode, dnslen sent but query lost, connection probably broken");
+                            return;
+                        }
                         continue;
                     default:
                         break;
@@ -206,6 +219,11 @@ static void _receive(output_tlscli_t* self, const core_object_t* obj)
             switch (ret) {
             case GNUTLS_E_AGAIN:
             case GNUTLS_E_TIMEDOUT:
+            case GNUTLS_E_INTERRUPTED:
+                if (self->nonblocking) {
+                    lwarning("unable to send in nonblocking mode, dnslen+query lost");
+                    return;
+                }
                 continue;
             default:
                 break;
@@ -233,76 +251,57 @@ core_receiver_t output_tlscli_receiver(output_tlscli_t* self)
 
 static const core_object_t* _produce(output_tlscli_t* self)
 {
-    ssize_t  n, recv = 0;
-    uint16_t dnslen;
+    ssize_t       n;
+    struct pollfd p;
+    int           to = 0;
     mlassert_self();
 
-    // Check if last recvfrom() got more then we needed
-    if (!self->have_dnslen && self->recv > self->dnslen) {
-        recv = self->recv - self->dnslen;
-        if (recv < sizeof(dnslen)) {
-            memcpy(((uint8_t*)&dnslen), self->recvbuf + self->dnslen, recv);
+    if (self->have_pkt) {
+        if (self->recv > self->dnslen + sizeof(self->dnslen)) {
+            self->recv -= self->dnslen + sizeof(self->dnslen);
+            memmove(self->recvbuf, self->recvbuf + self->dnslen + sizeof(self->dnslen), self->recv);
         } else {
-            memcpy(((uint8_t*)&dnslen), self->recvbuf + self->dnslen, sizeof(dnslen));
-
-            if (recv > sizeof(dnslen)) {
-                self->recv = recv - sizeof(dnslen);
-                memmove(self->recvbuf, self->recvbuf + self->dnslen + sizeof(dnslen), self->recv);
-            } else {
-                self->recv = 0;
-            }
-
-            self->dnslen      = ntohs(dnslen);
-            self->have_dnslen = 1;
-
-            if (self->recv > self->dnslen) {
-                self->pkts_recv++;
-                self->pkt.len     = self->dnslen;
-                self->have_dnslen = 0;
-                return (core_object_t*)&self->pkt;
-            }
+            self->recv = 0;
         }
+        self->have_pkt    = 0;
+        self->have_dnslen = 0;
     }
 
-    if (!self->have_dnslen) {
-        for (;;) {
-            n = gnutls_record_recv(self->session, ((uint8_t*)&dnslen) + recv, sizeof(dnslen) - recv);
-            if (n > 0) {
-                recv += n;
-                if (recv < sizeof(dnslen))
-                    continue;
-                break;
-            }
-            if (!n) {
-                break;
-            }
-            switch (n) {
-            case GNUTLS_E_AGAIN:
-            case GNUTLS_E_TIMEDOUT:
-                self->pkt.len = 0;
-                return (core_object_t*)&self->pkt;
-            default:
-                break;
-            }
-            self->errs++;
-            break;
+    if (!self->have_dnslen && self->recv >= sizeof(self->dnslen)) {
+        self->dnslen      = ntohs(*(uint16_t*)self->recvbuf);
+        self->have_dnslen = 1;
+    }
+    if (self->have_dnslen && self->recv >= self->dnslen + sizeof(self->dnslen)) {
+        self->pkts_recv++;
+        self->pkt.len  = self->dnslen;
+        self->have_pkt = 1;
+        return (core_object_t*)&self->pkt;
+    }
+
+    if (!gnutls_record_check_pending(self->session) && (self->timeout.sec > 0 || self->timeout.nsec > 0)) {
+        p.fd      = self->fd;
+        p.events  = POLLIN;
+        p.revents = 0;
+        to        = (self->timeout.sec * 1e3) + (self->timeout.nsec / 1e6);
+        if (!to) {
+            to = 1;
         }
 
-        if (n < 1) {
+        n = poll(&p, 1, to);
+        if (n < 0 || (p.revents & (POLLERR | POLLHUP | POLLNVAL))) {
+            self->errs++;
             return 0;
         }
-
-        self->dnslen      = ntohs(dnslen);
-        self->have_dnslen = 1;
-        self->recv        = 0;
+        if (!n || !(p.revents & POLLIN)) {
+            self->pkt.len = 0;
+            return (core_object_t*)&self->pkt;
+        }
     }
 
     for (;;) {
         n = gnutls_record_recv(self->session, self->recvbuf + self->recv, sizeof(self->recvbuf) - self->recv);
         if (n > 0) {
             self->recv += n;
-            if (self->recv < self->dnslen)
-                continue;
             break;
         }
         if (!n) {
@@ -311,6 +310,7 @@ static const core_object_t* _produce(output_tlscli_t* self)
         switch (n) {
         case GNUTLS_E_AGAIN:
         case GNUTLS_E_TIMEDOUT:
+        case GNUTLS_E_INTERRUPTED:
             self->pkt.len = 0;
             return (core_object_t*)&self->pkt;
         default:
@@ -324,9 +324,18 @@ static const core_object_t* _produce(output_tlscli_t* self)
         return 0;
     }
 
-    self->pkts_recv++;
-    self->pkt.len     = self->dnslen;
-    self->have_dnslen = 0;
+    if (!self->have_dnslen && self->recv >= sizeof(self->dnslen)) {
+        self->dnslen      = ntohs(*(uint16_t*)self->recvbuf);
+        self->have_dnslen = 1;
+    }
+    if (self->have_dnslen && self->recv >= self->dnslen + sizeof(self->dnslen)) {
+        self->pkts_recv++;
+        self->pkt.len  = self->dnslen;
+        self->have_pkt = 1;
+        return (core_object_t*)&self->pkt;
+    }
+
+    self->pkt.len = 0;
     return (core_object_t*)&self->pkt;
 }
 
