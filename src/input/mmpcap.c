@@ -225,6 +225,7 @@ int input_mmpcap_run(input_mmpcap_t* self)
 
     while (self->len - self->at > 16) {
         memcpy(&hdr, &self->buf[self->at], 16);
+        pkt.offset = self->at;
         self->at += 16;
         if (self->is_swapped) {
             hdr.ts_sec   = bswap_32(hdr.ts_sec);
@@ -289,6 +290,7 @@ static const core_object_t* _produce(input_mmpcap_t* self)
     }
 
     memcpy(&hdr, &self->buf[self->at], 16);
+    self->prod_pkt.offset = self->at;
     self->at += 16;
     if (self->is_swapped) {
         hdr.ts_sec   = bswap_32(hdr.ts_sec);

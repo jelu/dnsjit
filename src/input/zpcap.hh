@@ -65,6 +65,8 @@ typedef struct input_zpcap {
     uint32_t network;
 
     uint32_t linktype;
+
+    uint64_t total_read;
 } input_zpcap_t;
 
 core_log_t* input_zpcap_log();

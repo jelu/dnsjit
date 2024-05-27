@@ -129,6 +129,13 @@ function Zmmpcap:have_support()
     return false
 end
 
+-- Set the internal out buffer used for decompressing, must be set before
+-- calling
+-- .BR open() .
+function Zmmpcap:set_out_size(num)
+    self.obj.force_out_size = num
+end
+
 -- Open a PCAP file for processing and read the PCAP header.
 -- Returns 0 on success.
 function Zmmpcap:open(file)
@@ -144,6 +151,16 @@ end
 -- Return the number of packets seen.
 function Zmmpcap:packets()
     return tonumber(self.obj.pkts)
+end
+
+-- Return the number of total read bytes.
+function Zmmpcap:total_read()
+    return tonumber(self.obj.total_read)
+end
+
+-- Return the number of total read bytes of compressed data.
+function Zmmpcap:total_compress_read()
+    return tonumber(self.obj.total_compress_read)
 end
 
 return Zmmpcap

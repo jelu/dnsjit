@@ -101,6 +101,8 @@ static input_zmmpcap_t _defaults = {
     0, 0, 0, 0,
     -1, 0, 0, 0, MAP_FAILED,
     0, 0, 0, 0, 0, 0, 0,
+    0,
+    0, 0,
     0
 };
 
@@ -180,6 +182,7 @@ static ssize_t _read(input_zmmpcap_t* self, void* dst, size_t len, void** dstp)
             *dstp = self->out + self->out_at;
             self->out_have -= need;
             self->out_at += need;
+            self->total_read += need;
             return len;
         }
 
@@ -188,12 +191,14 @@ static ssize_t _read(input_zmmpcap_t* self, void* dst, size_t len, void** dstp)
                 memcpy(dst, self->out + self->out_at, need);
                 self->out_have -= need;
                 self->out_at += need;
+                self->total_read += need;
                 return len;
             }
 
             memcpy(dst, self->out + self->out_at, self->out_have);
             need -= self->out_have;
             dst += self->out_have;
+            self->total_read += self->out_have;
 
             if (self->at >= self->len) {
                 return 0;
@@ -204,10 +209,11 @@ static ssize_t _read(input_zmmpcap_t* self, void* dst, size_t len, void** dstp)
             if (LZ4F_isError(code)) {
                 lfatal("LZ4F_decompress() failed: %s", LZ4F_getErrorName(code));
             }
-
             self->at += src_size;
             self->out_at   = 0;
             self->out_have = dst_size;
+
+            self->total_compress_read = self->at;
         }
     }
 #endif
@@ -219,6 +225,7 @@ static ssize_t _read(input_zmmpcap_t* self, void* dst, size_t len, void** dstp)
             *dstp = self->out + self->out_at;
             self->out_have -= need;
             self->out_at += need;
+            self->total_read += need;
             return len;
         }
 
@@ -227,12 +234,14 @@ static ssize_t _read(input_zmmpcap_t* self, void* dst, size_t len, void** dstp)
                 memcpy(dst, self->out + self->out_at, need);
                 self->out_have -= need;
                 self->out_at += need;
+                self->total_read += need;
                 return len;
             }
 
             memcpy(dst, self->out + self->out_at, self->out_have);
             need -= self->out_have;
             dst += self->out_have;
+            self->total_read += self->out_have;
 
             if (zstd->in.pos >= zstd->in.size) {
                 return 0;
@@ -247,6 +256,8 @@ static ssize_t _read(input_zmmpcap_t* self, void* dst, size_t len, void** dstp)
 
             self->out_have = zstd->out.pos;
             self->out_at   = 0;
+
+            self->total_compress_read = zstd->in.pos;
         }
     }
 #endif
@@ -257,6 +268,7 @@ static ssize_t _read(input_zmmpcap_t* self, void* dst, size_t len, void** dstp)
             *dstp = self->out + self->out_at;
             self->out_have -= need;
             self->out_at += need;
+            self->total_read += need;
             return len;
         }
 
@@ -265,12 +277,14 @@ static ssize_t _read(input_zmmpcap_t* self, void* dst, size_t len, void** dstp)
                 memcpy(dst, self->out + self->out_at, need);
                 self->out_have -= need;
                 self->out_at += need;
+                self->total_read += need;
                 return len;
             }
 
             memcpy(dst, self->out + self->out_at, self->out_have);
             need -= self->out_have;
             dst += self->out_have;
+            self->total_read += self->out_have;
 
             if (gzip->strm.avail_in <= 0) {
                 return 0;
@@ -281,6 +295,7 @@ static ssize_t _read(input_zmmpcap_t* self, void* dst, size_t len, void** dstp)
 
             self->out_at = 0;
             int ret      = inflate(&gzip->strm, Z_NO_FLUSH);
+            self->total_compress_read = self->len - gzip->strm.avail_in;
             if (ret != Z_OK) {
                 if (ret == Z_STREAM_END) {
                     self->out_have = self->out_size - gzip->strm.avail_out;
@@ -303,6 +318,7 @@ static ssize_t _read(input_zmmpcap_t* self, void* dst, size_t len, void** dstp)
             *dstp = self->out + self->out_at;
             self->out_have -= need;
             self->out_at += need;
+            self->total_read += need;
             return len;
         }
 
@@ -312,12 +328,14 @@ static ssize_t _read(input_zmmpcap_t* self, void* dst, size_t len, void** dstp)
                 memcpy(dst, self->out + self->out_at, need);
                 self->out_have -= need;
                 self->out_at += need;
+                self->total_read += need;
                 return len;
             }
 
             memcpy(dst, self->out + self->out_at, self->out_have);
             need -= self->out_have;
             dst += self->out_have;
+            self->total_read += self->out_have;
 
             if (lzma->strm.avail_in <= 0) {
                 return 0;
@@ -328,6 +346,7 @@ static ssize_t _read(input_zmmpcap_t* self, void* dst, size_t len, void** dstp)
 
             self->out_at = 0;
             lzma_ret ret = lzma_code(&lzma->strm, action);
+            self->total_compress_read = self->len - lzma->strm.avail_in;
             if (ret != LZMA_OK) {
                 if (ret == LZMA_STREAM_END) {
                     self->out_have = self->out_size - lzma->strm.avail_out;
@@ -391,7 +410,7 @@ int input_zmmpcap_open(input_zmmpcap_t* self, const char* file)
         }
         lz4->opts.stableDst = 1;
 
-        self->out_size = 256 * 1024;
+        self->out_size = self->force_out_size ? self->force_out_size : 256 * 1024;
         lfatal_oom(self->out = malloc(self->out_size));
         break;
     }
@@ -406,7 +425,7 @@ int input_zmmpcap_open(input_zmmpcap_t* self, const char* file)
 
         lfatal_oom(self->comp_ctx = calloc(1, sizeof(struct _zstd_ctx)));
         lfatal_oom(zstd->ctx = ZSTD_createDCtx());
-        self->out_size = ZSTD_DStreamOutSize();
+        self->out_size = self->force_out_size ? self->force_out_size : ZSTD_DStreamOutSize();
         lfatal_oom(self->out = malloc(self->out_size + 1));
 
         zstd->in.src   = self->map;
@@ -429,7 +448,7 @@ int input_zmmpcap_open(input_zmmpcap_t* self, const char* file)
             return -1;
         }
 
-        self->out_size = 256 * 1024;
+        self->out_size = self->force_out_size ? self->force_out_size : 256 * 1024;
         lfatal_oom(self->out = malloc(self->out_size));
 
         gzip->strm.next_in  = self->map;
@@ -452,7 +471,7 @@ int input_zmmpcap_open(input_zmmpcap_t* self, const char* file)
             return -1;
         }
 
-        self->out_size = 256 * 1024;
+        self->out_size = self->force_out_size ? self->force_out_size : 256 * 1024;
         lfatal_oom(self->out = malloc(self->out_size));
 
         lzma->strm.next_in  = self->map;
@@ -582,6 +601,7 @@ int input_zmmpcap_run(input_zmmpcap_t* self)
             lwarning("invalid packet length, larger then snaplen");
             return -1;
         }
+        pkt.offset = self->total_read - 16;
         pkt.bytes = (unsigned char*)self->buf;
         if (_read(self, self->buf, hdr.incl_len, (void**)&pkt.bytes) != hdr.incl_len) {
             lwarning("could not read all of packet, aborting");
@@ -644,6 +664,7 @@ static const core_object_t* _produce(input_zmmpcap_t* self)
         self->is_broken = 1;
         return 0;
     }
+    self->prod_pkt.offset = self->total_read - 16;
     self->prod_pkt.bytes = (unsigned char*)self->buf;
     if (_read(self, self->buf, hdr.incl_len, (void**)&self->prod_pkt.bytes) != hdr.incl_len) {
         lwarning("could not read all of packet, aborting");

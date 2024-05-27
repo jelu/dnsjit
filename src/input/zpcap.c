@@ -101,6 +101,7 @@ static input_zpcap_t _defaults = {
     0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0,
+    0,
     0
 };
 
@@ -180,6 +181,7 @@ static ssize_t _read(input_zpcap_t* self, void* dst, size_t len, void** dstp)
             *dstp = self->out + self->out_at;
             self->out_have -= need;
             self->out_at += need;
+            self->total_read += need;
             return len;
         }
 
@@ -188,12 +190,14 @@ static ssize_t _read(input_zpcap_t* self, void* dst, size_t len, void** dstp)
                 memcpy(dst, self->out + self->out_at, need);
                 self->out_have -= need;
                 self->out_at += need;
+                self->total_read += need;
                 return len;
             }
 
             memcpy(dst, self->out + self->out_at, self->out_have);
             need -= self->out_have;
             dst += self->out_have;
+            self->total_read += self->out_have;
 
             ssize_t n = fread(self->in + self->in_at, 1, self->in_size - self->in_have, self->file);
             if (n < 0) {
@@ -233,6 +237,7 @@ static ssize_t _read(input_zpcap_t* self, void* dst, size_t len, void** dstp)
             *dstp = self->out + self->out_at;
             self->out_have -= need;
             self->out_at += need;
+            self->total_read += need;
             return len;
         }
 
@@ -241,12 +246,14 @@ static ssize_t _read(input_zpcap_t* self, void* dst, size_t len, void** dstp)
                 memcpy(dst, self->out + self->out_at, need);
                 self->out_have -= need;
                 self->out_at += need;
+                self->total_read += need;
                 return len;
             }
 
             memcpy(dst, self->out + self->out_at, self->out_have);
             need -= self->out_have;
             dst += self->out_have;
+            self->total_read += self->out_have;
 
             if (zstd->in.pos >= zstd->in.size) {
                 ssize_t n = fread(self->in, 1, self->in_size, self->file);
@@ -269,8 +276,13 @@ static ssize_t _read(input_zpcap_t* self, void* dst, size_t len, void** dstp)
         }
     }
 #endif
-    case input_zpcap_type_gzip:
-        return gzfread(dst, 1, len, gzip->fp);
+    case input_zpcap_type_gzip: {
+        ssize_t n = gzfread(dst, 1, len, gzip->fp);
+        if (n > 0) {
+            self->total_read += n;
+        }
+        return n;
+    }
 #ifdef HAVE_LZMA
     case input_zpcap_type_lzma: {
         size_t need = len;
@@ -279,6 +291,7 @@ static ssize_t _read(input_zpcap_t* self, void* dst, size_t len, void** dstp)
             *dstp = self->out + self->out_at;
             self->out_have -= need;
             self->out_at += need;
+            self->total_read += need;
             return len;
         }
 
@@ -289,12 +302,14 @@ static ssize_t _read(input_zpcap_t* self, void* dst, size_t len, void** dstp)
                 memcpy(dst, self->out + self->out_at, need);
                 self->out_have -= need;
                 self->out_at += need;
+                self->total_read += need;
                 return len;
             }
 
             memcpy(dst, self->out + self->out_at, self->out_have);
             need -= self->out_have;
             dst += self->out_have;
+            self->total_read += self->out_have;
 
             ssize_t n = fread(inbuf, 1, sizeof(inbuf), self->file);
             if (n < 0) {
@@ -579,6 +594,7 @@ int input_zpcap_run(input_zpcap_t* self)
             lwarning("invalid packet length, larger then snaplen");
             return -1;
         }
+        pkt.offset = self->total_read - 16;
         pkt.bytes = (unsigned char*)self->buf;
         if (_read(self, self->buf, hdr.incl_len, (void**)&pkt.bytes) != hdr.incl_len) {
             lwarning("could not read all of packet, aborting");
@@ -666,6 +682,7 @@ static const core_object_t* _produce(input_zpcap_t* self)
         self->is_broken = 1;
         return 0;
     }
+    self->prod_pkt.offset = self->total_read - 16;
     self->prod_pkt.bytes = (unsigned char*)self->buf;
     if (_read(self, self->buf, hdr.incl_len, (void**)&self->prod_pkt.bytes) != hdr.incl_len) {
         lwarning("could not read all of packet, aborting");

@@ -106,12 +106,20 @@ function Ip:free()
 end
 
 -- Return the IP source as a string.
-function Ip:source()
+-- TODO
+function Ip:source(as_ip6)
+    if as_ip6 == true then
+        return "::ffff:" .. libip.ipstring(self.src)
+    end
     return libip.ipstring(self.src)
 end
 
 -- Return the IP destination as a string.
-function Ip:destination()
+-- TODO
+function Ip:destination(as_ip6)
+    if as_ip6 == true then
+        return "::ffff:" .. libip.ipstring(self.dst)
+    end
     return libip.ipstring(self.dst)
 end
 

@@ -64,6 +64,10 @@ typedef struct input_zmmpcap {
     uint32_t network;
 
     uint32_t linktype;
+
+    uint64_t total_read, total_compress_read;
+
+    size_t force_out_size;
 } input_zmmpcap_t;
 
 core_log_t* input_zmmpcap_log();

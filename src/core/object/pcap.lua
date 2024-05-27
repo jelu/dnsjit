@@ -47,6 +47,10 @@
 -- Indicate if the byte order of the PCAP is different then the host.
 -- This is used in, for example, the Layer filter to correctly parse null
 -- objects since they are stored in the capturers host byte order.
+-- .TP
+-- offset
+-- The offset in the PCAP source where this packet was found or zero if not
+-- supported.
 module(...,package.seeall)
 
 require("dnsjit.core.object.pcap_h")

@@ -256,6 +256,7 @@ int input_fpcap_run(input_fpcap_t* self)
             lwarning("invalid packet length, larger then snaplen");
             return -1;
         }
+        pkt.offset = ftell(self->file) - 16;
         if (fread(self->buf, 1, hdr.incl_len, self->file) != hdr.incl_len) {
             lwarning("could not read all of packet, aborting");
             return -1;
@@ -317,6 +318,7 @@ static const core_object_t* _produce(input_fpcap_t* self)
         self->is_broken = 1;
         return 0;
     }
+    self->prod_pkt.offset = ftell(self->file) - 16;
     if (fread(self->buf, 1, hdr.incl_len, self->file) != hdr.incl_len) {
         lwarning("could not read all of packet, aborting");
         self->is_broken = 1;

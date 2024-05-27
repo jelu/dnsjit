@@ -32,6 +32,8 @@ typedef struct core_object_pcap {
     const unsigned char* bytes;
 
     uint8_t is_swapped;
+
+    uint64_t offset;
 } core_object_pcap_t;
 
 core_object_pcap_t* core_object_pcap_copy(const core_object_pcap_t* self);

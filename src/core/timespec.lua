@@ -26,6 +26,7 @@
 --   #include "core/timespec.h"
 -- .SS Lua
 --   require("dnsjit.core.timespec_h")
+--   local ts = require("ffi").new("core_timespec_t")
 -- .SS Lua functions
 --   local ts = require("dnsjit.core.timespec"):max_init()
 --
